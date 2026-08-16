@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Install all three dependency trees
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install server dependencies
+        run: npm install --prefix server
+
+      - name: Install client dependencies
+        run: npm install --prefix client
+
+      # Unit tests — no external services required
+      - name: Run unit tests
+        run: npm run test:unit
+        env:
+          NODE_ENV: test
+
+      # Integration tests — MongoMemoryReplSet downloads MongoDB binary on first run;
+      # GitHub Actions caches ~/.cache/mongodb-binaries via the cache step below.
+      - name: Cache MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binary-7.0.14
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+
+      # Security tests
+      - name: Run security tests
+        run: npm run test:security
+        env:
+          NODE_ENV: test
+
+      # Verify the frontend builds without errors
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_URL: /api/v1
