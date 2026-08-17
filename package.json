@@ -7,6 +7,7 @@
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm run build --prefix client",
     "seed": "node server/scripts/seed.js",
+    "generate-lockfiles": "npm install && npm install --prefix server && npm install --prefix client",
     "test": "jest --config tests/jest.config.js --runInBand",
     "test:unit": "jest --config tests/jest.config.js --testPathPattern=tests/unit --runInBand",
     "test:integration": "jest --config tests/jest.config.js --testPathPattern=tests/integration --runInBand",

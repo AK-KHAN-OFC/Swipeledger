@@ -19,45 +19,67 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          # cache: npm requires at least one lockfile to exist.
+          # cache-dependency-path lists all three package trees so the cache
+          # key reflects changes in any of them.
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
 
-      # Install all three dependency trees
-      - name: Install root dependencies
-        run: npm install
-
-      - name: Install server dependencies
-        run: npm install --prefix server
-
-      - name: Install client dependencies
-        run: npm install --prefix client
-
-      # Unit tests — no external services required
-      - name: Run unit tests
-        run: npm run test:unit
-        env:
-          NODE_ENV: test
-
-      # Integration tests — MongoMemoryReplSet downloads MongoDB binary on first run;
-      # GitHub Actions caches ~/.cache/mongodb-binaries via the cache step below.
+      # Cache the MongoDB binary used by MongoMemoryReplSet in integration tests.
+      # Placed BEFORE dependency installation so the binary is available the moment
+      # integration tests start. On cache miss the binary downloads automatically;
+      # actions/cache saves it at job completion for the next run.
       - name: Cache MongoDB binary
         uses: actions/cache@v4
         with:
           path: ~/.cache/mongodb-binaries
           key: mongodb-binary-7.0.14
 
+      # npm ci is the correct command when lockfiles are committed:
+      #   - Reproducible: installs exactly the versions in the lockfile
+      #   - Faster than npm install (skips dependency resolution)
+      #   - Fails if package.json and lockfile are out of sync (catches drift early)
+      #   - Does not modify the lockfile
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      # Unit tests — pure functions + counter (uses MongoMemoryReplSet).
+      # No external services beyond the in-process replica set.
+      - name: Run unit tests
+        run: npm run test:unit
+        env:
+          NODE_ENV: test
+
+      # Integration tests — full auth, device, rate-limit, isolation flows.
+      # MongoMemoryReplSet required; binary served from cache above.
       - name: Run integration tests
         run: npm run test:integration
         env:
           NODE_ENV: test
 
-      # Security tests
+      # Security tests — headers, auth boundary, injection, sensitive data exposure.
       - name: Run security tests
         run: npm run test:security
         env:
           NODE_ENV: test
 
-      # Verify the frontend builds without errors
+      # Verify the React/Vite build produces no errors.
+      # working-directory: client runs the client's own build script directly
+      # rather than going through the root npm run build --prefix client alias.
       - name: Build frontend
         run: npm run build
+        working-directory: client
         env:
           VITE_API_URL: /api/v1
+

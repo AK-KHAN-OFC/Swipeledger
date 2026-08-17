@@ -10,6 +10,14 @@ node_modules/
 server/node_modules/
 client/node_modules/
 
+# package-lock.json files are intentionally NOT listed here.
+# All three lockfiles MUST be committed to the repository:
+#   package-lock.json          (root — test runner dependencies)
+#   server/package-lock.json   (backend dependencies)
+#   client/package-lock.json   (frontend dependencies)
+# The CI workflow uses `npm ci` which requires committed lockfiles.
+# Generate them locally with: npm run generate-lockfiles
+
 # ── Build output ─────────────────────────────────────────────────────────────
 client/dist/
 client/build/

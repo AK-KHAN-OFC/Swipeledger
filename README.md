@@ -39,6 +39,19 @@ npm install --prefix server   # backend: Express, Mongoose, bcrypt, etc.
 npm install --prefix client   # frontend: React, Vite, Tailwind, etc.
 ```
 
+> **Lockfiles must be committed.** The CI workflow uses `npm ci`, which requires
+> `package-lock.json`, `server/package-lock.json`, and `client/package-lock.json`
+> to exist in the repository. Running `npm install` above generates all three.
+> Commit them before pushing:
+>
+> ```bash
+> git add package-lock.json server/package-lock.json client/package-lock.json
+> git commit -m "chore: add lockfiles for reproducible installs"
+> git push
+> ```
+>
+> Or use the convenience script: `npm run generate-lockfiles`
+
 > **First-run note:** `mongodb-memory-server` downloads a real MongoDB 7.0.14 binary
 > (~70 MB) on first test run. This requires internet access and may take a few minutes.
 > The binary is cached in `~/.cache/mongodb-binaries/` and reused on subsequent runs.
