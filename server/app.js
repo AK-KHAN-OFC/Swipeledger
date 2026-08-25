@@ -72,8 +72,18 @@ app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 
 // ─── NoSQL injection protection ───────────────────────────────────────────────
-// Strips MongoDB operators ($, .) from req.body, req.query, req.params
-app.use(mongoSanitize({ replaceWith: '_' }));
+// Strips MongoDB operators ($, .) from req.body and req.params.
+// express-mongo-sanitize@2.2.0's built-in middleware also tries to reassign
+// req.query, but Express 5 defines req.query as a read-only getter — that
+// assignment throws TypeError and crashes every request.  Calling sanitize()
+// directly on the two writable targets avoids the reassignment entirely.
+// req.query is intentionally omitted: Express 5 / qs URL-encodes '$' as '%24'
+// so bare MongoDB operators cannot survive as query-string keys.
+app.use((req, _res, next) => {
+  if (req.body)   req.body   = mongoSanitize.sanitize(req.body,   { replaceWith: '_' });
+  if (req.params) req.params = mongoSanitize.sanitize(req.params, { replaceWith: '_' });
+  next();
+});
 
 // ─── HTTP request logging ─────────────────────────────────────────────────────
 app.use(requestLogger);
