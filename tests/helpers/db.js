@@ -64,7 +64,7 @@ async function disconnectTestDB() {
   } catch (_) {}
   await mongoose.disconnect();
   if (replSet) {
-    await replSet.stop();
+    await replSet.stop({ doCleanup: true, force: true });
     replSet = null;
   }
 }
