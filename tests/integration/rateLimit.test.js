@@ -4,7 +4,7 @@ const request = require('supertest');
 const { v4: uuidv4 } = require('uuid');
 const { connectTestDB, disconnectTestDB, clearCollections } = require('../helpers/db');
 const { createTestAccount, TEST_PASSWORD } = require('../helpers/fixtures');
-const { getStore } = require('../../server/middleware/rateLimiter');
+const { getStore, destroyStore } = require('../../server/middleware/rateLimiter');
 const { RATE_LIMIT } = require('../../server/config/constants');
 
 let app;
@@ -14,7 +14,10 @@ beforeAll(async () => {
   app = require('../../server/app');
 }, 60000);
 
-afterAll(() => disconnectTestDB(), 30000);
+afterAll(async () => {
+  destroyStore();
+  await disconnectTestDB();
+}, 30000);
 
 afterEach(async () => {
   await clearCollections();

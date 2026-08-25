@@ -86,6 +86,17 @@ class FailedLoginStore {
     if (!entry || Date.now() >= entry.resetAt) return 0;
     return entry.count;
   }
+
+  /**
+   * Stop the cleanup interval. Call this in test teardown (afterAll) to
+   * prevent Jest from hanging on the open setInterval handle.
+   * unref() suppresses the handle during normal test runs, but Jest's
+   * --detectOpenHandles and some CI environments still report it; an
+   * explicit clearInterval is the definitive fix.
+   */
+  destroy() {
+    clearInterval(this._cleanupInterval);
+  }
 }
 
 const store = new FailedLoginStore();
@@ -165,4 +176,9 @@ function getStore() {
   return store;
 }
 
-module.exports = { loginRateLimitCheck, recordLoginFailure, resetLoginCounters, getStore };
+/** Stop the cleanup interval — call in test afterAll to avoid open-handle warnings */
+function destroyStore() {
+  store.destroy();
+}
+
+module.exports = { loginRateLimitCheck, recordLoginFailure, resetLoginCounters, getStore, destroyStore };
