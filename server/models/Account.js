@@ -89,6 +89,16 @@ const AccountSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+
+    // Sentinel field written inside device-registration transactions to create a
+    // write-write conflict between concurrent transactions for the same account.
+    // This serializes concurrent device registrations and enforces the device limit
+    // atomically under MongoDB snapshot isolation. Not used by application logic.
+    _deviceLimitCheckAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
   },
   {
     timestamps: true,

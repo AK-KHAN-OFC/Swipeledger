@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const Account = require('../models/Account');
 const Device = require('../models/Device');
 const Session = require('../models/Session');
 const createError = require('../utils/createError');
@@ -34,6 +35,15 @@ function parseUserAgent(userAgent) {
  * The count check + insert is wrapped in a MongoDB transaction to prevent
  * concurrent requests from bypassing the device limit.
  *
+ * Atomicity note: MongoDB transactions use snapshot isolation, not serializable.
+ * Two concurrent transactions for the same account can both snapshot count=N,
+ * both pass the limit check, and both commit — because distinct deviceUUIDs
+ * produce no write-write conflict on the Device collection. To serialize them,
+ * we write to the Account document inside the transaction before counting.
+ * Any two concurrent transactions for the same account now conflict on the
+ * Account document write, causing one to block until the other commits, then
+ * re-evaluate with an updated snapshot that reflects the committed insert.
+ *
  * @param {object} opts
  * @param {ObjectId} opts.accountId
  * @param {number}   opts.deviceLimit  — from account document
@@ -62,7 +72,28 @@ async function registerOrFindDevice({ accountId, deviceLimit, deviceUUID, device
       return { device: existing, isNewDevice: false };
     }
 
-    // Step 2: Count currently active devices (atomic within transaction)
+    // Step 2: Serialize concurrent registrations for the same account.
+    //
+    // MongoDB snapshot isolation allows two concurrent transactions to both read
+    // count=N and both pass the limit check when they insert different deviceUUIDs
+    // (no write-write conflict → both commit → limit violated).
+    //
+    // Writing to the Account document here creates a write-write conflict between
+    // any two concurrent transactions for the same account. MongoDB's transaction
+    // protocol blocks the second writer until the first commits or aborts, then
+    // restarts the second transaction with a fresh snapshot that includes the
+    // first transaction's committed device insert. The second transaction then
+    // re-counts and correctly sees count >= limit.
+    //
+    // _deviceLimitCheckAt is a lightweight sentinel field; it does not change
+    // application logic and is ignored by all queries.
+    await Account.findByIdAndUpdate(
+      accountId,
+      { $set: { _deviceLimitCheckAt: new Date() } },
+      { session: dbSession },
+    );
+
+    // Step 3: Count currently active devices (now serialized by the Account write)
     const count = await Device.countDocuments(
       { accountId, isActive: true },
       { session: dbSession },
@@ -86,7 +117,7 @@ async function registerOrFindDevice({ accountId, deviceLimit, deviceUUID, device
       throw err;
     }
 
-    // Step 3: Register the new device
+    // Step 4: Register the new device
     const [device] = await Device.create(
       [
         {
