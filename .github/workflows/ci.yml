@@ -83,3 +83,9 @@ jobs:
         env:
           VITE_API_URL: /api/v1
 
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: swipeledger-frontend
+          path: client/dist
