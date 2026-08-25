@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { authApi } from '../../services/api/auth.api';
-import Spinner from '../ui/Spinner';
+import Spinner from '../../components/ui/Spinner';
 
 /**
  * Guards authenticated routes.
