@@ -25,6 +25,27 @@ module.exports = function errorHandler(err, req, res, next) { // eslint-disable-
       path: req.path,
       accountId: req.accountId?.toString(),
     });
+
+    // TEMPORARY DIAGNOSTIC — remove before merge
+    // logger is silent in NODE_ENV=test; use console.error to bypass winston.
+    if (process.env.NODE_ENV === 'test') {
+      // eslint-disable-next-line no-undef
+      const mongoose = require('mongoose');
+      const conn = mongoose.connection;
+      // eslint-disable-next-line no-console
+      console.error('[DIAG 500]', {
+        errName:    err.name,
+        errMessage: err.message,
+        errCode:    err.code,
+        stack:      err.stack,
+        route:      `${req.method} ${req.path}`,
+        mongoReadyState: conn.readyState,  // 0=disconnected 1=connected 2=connecting 3=disconnecting
+        mongoHost:       conn.host,
+        mongoDbName:     conn.name,
+        mongoDbExists:   !!conn.db,
+      });
+    }
+    // END TEMPORARY DIAGNOSTIC
   }
 
   const message = isServerError
