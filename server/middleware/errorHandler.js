@@ -26,26 +26,25 @@ module.exports = function errorHandler(err, req, res, next) { // eslint-disable-
       accountId: req.accountId?.toString(),
     });
 
-    // TEMPORARY DIAGNOSTIC — remove before merge
-    // logger is silent in NODE_ENV=test; use console.error to bypass winston.
+    // TEMPORARY DIAGNOSTIC — test environment only. Remove before merging to main.
+    // Winston is silent in NODE_ENV=test, so real exceptions are invisible in CI.
+    // This writes directly to stderr so the actual error surfaces in CI logs.
     if (process.env.NODE_ENV === 'test') {
-      // eslint-disable-next-line no-undef
       const mongoose = require('mongoose');
       const conn = mongoose.connection;
-      // eslint-disable-next-line no-console
-      console.error('[DIAG 500]', {
-        errName:    err.name,
-        errMessage: err.message,
-        errCode:    err.code,
-        stack:      err.stack,
-        route:      `${req.method} ${req.path}`,
-        mongoReadyState: conn.readyState,  // 0=disconnected 1=connected 2=connecting 3=disconnecting
-        mongoHost:       conn.host,
-        mongoDbName:     conn.name,
-        mongoDbExists:   !!conn.db,
-      });
+      process.stderr.write(
+        '[DIAG 500]\n' +
+        'errName:             ' + (err.name || '') + '\n' +
+        'errMessage:          ' + (err.message || '') + '\n' +
+        'errCode:             ' + (err.code || '') + '\n' +
+        'mongoReadyState:     ' + conn.readyState + '\n' +
+        'mongoConnectionHost: ' + (conn.host || '') + '\n' +
+        'mongoConnectionName: ' + (conn.name || '') + '\n' +
+        'route:               ' + req.method + ' ' + req.path + '\n' +
+        'stack:\n' + (err.stack || '') + '\n' +
+        '---\n',
+      );
     }
-    // END TEMPORARY DIAGNOSTIC
   }
 
   const message = isServerError
