@@ -89,3 +89,83 @@ jobs:
         with:
           name: swipeledger-frontend
           path: client/dist
+
+  # ── Android APK ───────────────────────────────────────────────────────────────
+  # Runs only after every test + frontend build step in the `test` job passes.
+  # Installs Capacitor inline (not in package.json) so the test job's npm ci
+  # against the committed client/package-lock.json is never disturbed.
+  android:
+    name: Build Android APK
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Java 17 is required by the Android Gradle plugin used by Capacitor 6.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # npm install (not npm ci) — we are about to add Capacitor packages on top
+      # of the committed package.json, so we do not want the lockfile-check that
+      # npm ci enforces.  This step is isolated to the Android job's workspace.
+      - name: Install client dependencies
+        run: npm install
+        working-directory: client
+
+      # Install Capacitor into the job-local node_modules.  These packages are
+      # NOT added to the committed package.json / package-lock.json, keeping the
+      # test job's npm ci clean and unaffected.
+      - name: Install Capacitor packages
+        run: npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+        working-directory: client
+
+      # Build the production web bundle into client/dist — exactly the same
+      # command and env var used by the test job's "Build frontend" step.
+      - name: Build frontend
+        run: npm run build
+        working-directory: client
+        env:
+          VITE_API_URL: /api/v1
+
+      # Create the Android project under client/android/ using capacitor.config.json
+      # already committed to the repository.  cap add android reads webDir ("dist")
+      # and appId / appName from that file.
+      - name: Add Android platform
+        run: npx cap add android
+        working-directory: client
+
+      # Copy client/dist into the Android WebView assets directory and apply any
+      # Capacitor plugin configuration.
+      - name: Sync web assets to Android project
+        run: npx cap sync android
+        working-directory: client
+
+      # The Gradle wrapper is created by cap add android but may not carry the
+      # executable bit through npm's file extraction; set it explicitly.
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+        working-directory: client
+
+      # ubuntu-latest ships with Android SDK (ANDROID_HOME set).
+      # The Gradle wrapper downloads the correct Gradle distribution on first run.
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+        working-directory: client/android
+
+      # Upload the generated APK as a named artifact downloadable from the
+      # Actions run summary page.
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: swipeledger-android-apk
+          path: client/android/app/build/outputs/apk/debug/app-debug.apk
