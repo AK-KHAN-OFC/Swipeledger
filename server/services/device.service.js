@@ -56,94 +56,118 @@ function parseUserAgent(userAgent) {
 async function registerOrFindDevice({ accountId, deviceLimit, deviceUUID, deviceName, userAgent }) {
   const { platform, browser } = parseUserAgent(userAgent);
 
-  const dbSession = await mongoose.startSession();
-  dbSession.startTransaction();
+  // MongoDB throws WriteConflict (code 112, labelled TransientTransactionError) when two
+  // concurrent transactions write to the same document (the Account sentinel write below).
+  // It does NOT block and retry automatically — the application must retry the whole
+  // transaction from scratch.  On retry the fresh snapshot includes the winning
+  // transaction's committed device insert, so countDocuments naturally returns count >=
+  // deviceLimit and the DEVICE_LIMIT_REACHED path is taken.
+  const MAX_RETRIES = 3;
 
-  try {
-    // Step 1: Is this a returning device?
-    const existing = await Device.findOne(
-      { accountId, deviceUUID, isActive: true },
-      null,
-      { session: dbSession },
-    );
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const dbSession = await mongoose.startSession();
 
-    if (existing) {
-      await dbSession.commitTransaction();
-      return { device: existing, isNewDevice: false };
-    }
+    try {
+      dbSession.startTransaction();
 
-    // Step 2: Serialize concurrent registrations for the same account.
-    //
-    // MongoDB snapshot isolation allows two concurrent transactions to both read
-    // count=N and both pass the limit check when they insert different deviceUUIDs
-    // (no write-write conflict → both commit → limit violated).
-    //
-    // Writing to the Account document here creates a write-write conflict between
-    // any two concurrent transactions for the same account. MongoDB's transaction
-    // protocol blocks the second writer until the first commits or aborts, then
-    // restarts the second transaction with a fresh snapshot that includes the
-    // first transaction's committed device insert. The second transaction then
-    // re-counts and correctly sees count >= limit.
-    //
-    // _deviceLimitCheckAt is a lightweight sentinel field; it does not change
-    // application logic and is ignored by all queries.
-    await Account.findByIdAndUpdate(
-      accountId,
-      { $set: { _deviceLimitCheckAt: new Date() } },
-      { session: dbSession },
-    );
-
-    // Step 3: Count currently active devices (now serialized by the Account write)
-    const count = await Device.countDocuments(
-      { accountId, isActive: true },
-      { session: dbSession },
-    );
-
-    if (count >= deviceLimit) {
-      await dbSession.abortTransaction();
-
-      // Fetch active devices for the 403 response (outside the aborted transaction)
-      const activeDevices = await Device.find({ accountId, isActive: true })
-        .select('_id name platform browser lastActiveAt registeredAt')
-        .lean();
-
-      const err = createError(
-        403,
-        'DEVICE_LIMIT_REACHED',
-        `Maximum active devices (${deviceLimit}) reached. Revoke an existing device before logging in from a new one.`,
+      // Step 1: Is this a returning device?
+      const existing = await Device.findOne(
+        { accountId, deviceUUID, isActive: true },
+        null,
+        { session: dbSession },
       );
-      err.activeDevices = activeDevices;
-      err.limit = deviceLimit;
-      throw err;
-    }
 
-    // Step 4: Register the new device
-    const [device] = await Device.create(
-      [
-        {
-          accountId,
-          deviceUUID,
-          name: deviceName || `${platform} — ${browser}`,
-          platform,
-          browser,
-          isActive: true,
-          registeredAt: new Date(),
-          lastActiveAt: new Date(),
-        },
-      ],
-      { session: dbSession },
-    );
+      if (existing) {
+        await dbSession.commitTransaction();
+        return { device: existing, isNewDevice: false };
+      }
 
-    await dbSession.commitTransaction();
-    logger.info('Device registered', { accountId: accountId.toString(), platform, browser });
-    return { device, isNewDevice: true };
-  } catch (err) {
-    if (dbSession.inTransaction()) {
-      await dbSession.abortTransaction();
+      // Step 2: Serialize concurrent registrations for the same account.
+      //
+      // Writing to the Account document creates a write-write conflict between any two
+      // concurrent transactions for the same account.  The losing transaction receives a
+      // WriteConflict error (code 112, TransientTransactionError).  The retry loop above
+      // catches that, ends the aborted session, and starts a fresh transaction whose
+      // snapshot includes the winning transaction's committed device.  The re-count in
+      // Step 3 then correctly sees count >= limit.
+      //
+      // _deviceLimitCheckAt is a lightweight sentinel field; it has no effect on
+      // application logic and is ignored by all queries.
+      await Account.findByIdAndUpdate(
+        accountId,
+        { $set: { _deviceLimitCheckAt: new Date() } },
+        { session: dbSession },
+      );
+
+      // Step 3: Count currently active devices (serialized by the Account write above)
+      const count = await Device.countDocuments(
+        { accountId, isActive: true },
+        { session: dbSession },
+      );
+
+      if (count >= deviceLimit) {
+        await dbSession.abortTransaction();
+
+        // Fetch active devices for the 403 response (outside the aborted transaction)
+        const activeDevices = await Device.find({ accountId, isActive: true })
+          .select('_id name platform browser lastActiveAt registeredAt')
+          .lean();
+
+        const err = createError(
+          403,
+          'DEVICE_LIMIT_REACHED',
+          `Maximum active devices (${deviceLimit}) reached. Revoke an existing device before logging in from a new one.`,
+        );
+        err.activeDevices = activeDevices;
+        err.limit = deviceLimit;
+        throw err;
+      }
+
+      // Step 4: Register the new device
+      const [device] = await Device.create(
+        [
+          {
+            accountId,
+            deviceUUID,
+            name: deviceName || `${platform} — ${browser}`,
+            platform,
+            browser,
+            isActive: true,
+            registeredAt: new Date(),
+            lastActiveAt: new Date(),
+          },
+        ],
+        { session: dbSession },
+      );
+
+      await dbSession.commitTransaction();
+      logger.info('Device registered', { accountId: accountId.toString(), platform, browser });
+      return { device, isNewDevice: true };
+
+    } catch (err) {
+      if (dbSession.inTransaction()) {
+        await dbSession.abortTransaction();
+      }
+
+      // TransientTransactionError (WriteConflict, code 112): MongoDB aborted the losing
+      // concurrent transaction.  Retry from scratch — the fresh snapshot will reflect the
+      // winning transaction's committed writes and the count check will work correctly.
+      const isTransient =
+        err.errorLabels?.includes('TransientTransactionError') ||
+        err.code === 112;
+
+      if (isTransient && attempt < MAX_RETRIES) {
+        logger.info('TransientTransactionError on device registration — retrying', {
+          attempt,
+          accountId: accountId.toString(),
+        });
+        // fall through to next loop iteration (finally closes this session first)
+      } else {
+        throw err;
+      }
+    } finally {
+      await dbSession.endSession();
     }
-    throw err;
-  } finally {
-    await dbSession.endSession();
   }
 }
 
