@@ -81,8 +81,7 @@ jobs:
         run: npm run build
         working-directory: client
         env:
-          VITE_API_URL: /api/v1
-
+          VITE_API_URL: https://swipeledger.onrender.com/api/v1
 
       - name: Upload frontend build
         uses: actions/upload-artifact@v4
@@ -135,7 +134,7 @@ jobs:
         run: npm run build
         working-directory: client
         env:
-          VITE_API_URL: /api/v1
+          VITE_API_URL: https://swipeledger.onrender.com/api/v1
 
       # Create the Android project under client/android/ using capacitor.config.json
       # already committed to the repository.  cap add android reads webDir ("dist")

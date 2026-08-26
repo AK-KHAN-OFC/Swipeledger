@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+# Runs on every push to main, but only after the CI job succeeds.
+# This ensures broken builds are never deployed.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build & Deploy Frontend
+    runs-on: ubuntu-latest
+
+    # Required permissions for the github-pages deploy action
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    # Only one deploy runs at a time; in-progress deploys are NOT cancelled
+    # so a fast follow-up push waits rather than leaving Pages half-deployed.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      # Build the React/Vite bundle.
+      # VITE_API_URL is set here explicitly as a safety net; it matches the
+      # value already committed in client/.env.production.
+      # The compiled JS bundle will have this URL hardcoded — it is not a secret.
+      - name: Build frontend
+        run: npm run build
+        working-directory: client
+        env:
+          VITE_API_URL: https://swipeledger.onrender.com/api/v1
+
+      # Upload client/dist as the GitHub Pages artifact.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: client/dist
+
+      # Deploy the uploaded artifact to GitHub Pages.
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
