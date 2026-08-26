@@ -6,4 +6,5 @@ export const authApi = {
   refresh: () => apiClient.post('/auth/refresh'),
   logoutAll: () => apiClient.post('/auth/logout-all'),
   changePassword: (data) => apiClient.post('/auth/change-password', data),
+  register: (data) => apiClient.post('/auth/register', data),
 };

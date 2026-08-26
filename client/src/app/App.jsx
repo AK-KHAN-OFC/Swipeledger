@@ -7,6 +7,7 @@ import Spinner from '../components/ui/Spinner';
 
 // Eagerly loaded (small, shown on every page load)
 import Login from '../pages/Login';
+import Register from '../pages/Register';
 
 // Lazily loaded — split by route for smaller initial bundle
 const Account  = lazy(() => import('../pages/Account'));
@@ -51,6 +52,7 @@ export default function App() {
         <Routes>
           {/* Public */}
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
           {/* Protected — authenticated routes */}
           <Route

@@ -50,10 +50,25 @@ app.use(
 app.use(compression());
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
+// Explicit allowlist — never use '*' with credentials.
+//
+// Origins:
+//  - CLIENT_ORIGIN: GitHub Pages web app (set in Render env vars)
+//  - https://localhost: Capacitor Android WebView (androidScheme: 'https')
+//  - capacitor://localhost: Capacitor fallback scheme (older versions / iOS)
+//
+// Set.filter removes undefined (missing CLIENT_ORIGIN) and deduplicates
+// in case CLIENT_ORIGIN is already one of the static entries.
+const _allowedOrigins = [...new Set([
+  process.env.CLIENT_ORIGIN,
+  'https://localhost',
+  'capacitor://localhost',
+].filter(Boolean))];
+
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
-    credentials: true,          // Required: allows httpOnly cookie to be sent
+    origin: _allowedOrigins,
+    credentials: true,          // Required: allows httpOnly refresh cookie to be sent
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',

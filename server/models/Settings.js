@@ -8,7 +8,8 @@ const SettingsSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Account',
       required: true,
-      unique: true,
+      // unique: true removed — the explicit SettingsSchema.index() below is
+      // the single declaration. Duplicate caused startup index warnings on Render.
     },
     timezone: {
       type: String,

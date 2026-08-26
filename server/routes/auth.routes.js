@@ -6,9 +6,18 @@ const authenticate = require('../middleware/authenticate');
 const validateDeviceId = require('../middleware/validateDeviceId');
 const validate = require('../middleware/validate');
 const { loginRateLimitCheck } = require('../middleware/rateLimiter');
-const { loginSchema, changePasswordSchema } = require('../validators/auth.validators');
+const { loginSchema, changePasswordSchema, registerSchema } = require('../validators/auth.validators');
 
 const router = express.Router();
+
+// POST /api/v1/auth/register
+// Public — no device ID or authentication required.
+// Creates a merchant workspace and returns one-time credentials.
+router.post(
+  '/register',
+  validate(registerSchema),
+  authController.register,
+);
 
 // POST /api/v1/auth/login
 // Public. Rate checked before, failure recorded inside controller.

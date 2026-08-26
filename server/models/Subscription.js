@@ -8,7 +8,8 @@ const SubscriptionSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Account',
       required: true,
-      unique: true,
+      // unique: true removed — the explicit SubscriptionSchema.index() below is
+      // the single declaration. Duplicate caused startup index warnings on Render.
     },
     planId: {
       type: mongoose.Schema.Types.ObjectId,

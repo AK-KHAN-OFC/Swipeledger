@@ -31,4 +31,28 @@ const changePasswordSchema = z.object({
     .max(128, 'New password must be at most 128 characters'),
 });
 
-module.exports = { loginSchema, changePasswordSchema };
+// ─── Registration ──────────────────────────────────────────────────────────────
+
+/**
+ * Validator for POST /api/v1/auth/register.
+ * Only collects what the Account model requires from the merchant.
+ * accountCode, username, and password are all server-generated.
+ */
+const registerSchema = z.object({
+  businessName: z
+    .string({ required_error: 'Business name is required' })
+    .trim()
+    .min(2, 'Business name must be at least 2 characters')
+    .max(100, 'Business name must be at most 100 characters'),
+
+  // Optional — must be E.164 if provided (matches Account model validator)
+  mobileNumber: z
+    .string()
+    .trim()
+    .regex(/^\+[1-9]\d{7,14}$/, 'Mobile number must be in E.164 format (e.g. +919876543210)')
+    .optional()
+    .or(z.literal(''))
+    .transform((v) => (v === '' ? null : v ?? null)),
+});
+
+module.exports = { loginSchema, changePasswordSchema, registerSchema };

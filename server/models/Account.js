@@ -8,7 +8,10 @@ const AccountSchema = new mongoose.Schema(
     accountCode: {
       type: String,
       required: [true, 'Account code is required'],
-      unique: true,
+      // unique: true removed here — the explicit AccountSchema.index() below is
+      // the single source of truth. Declaring unique on the field AND via .index()
+      // causes Mongoose to register the index twice, producing duplicate-index
+      // warnings in the server logs (observed on Render startup).
       immutable: true,
       trim: true,
       validate: {
@@ -42,7 +45,10 @@ const AccountSchema = new mongoose.Schema(
     mobileNumber: {
       type: String,
       trim: true,
-      sparse: true,
+      // sparse: true removed here — the explicit AccountSchema.index() below
+      // already declares this as a sparse index. Keeping sparse on the field
+      // definition AND in .index() registers two identical indexes (duplicate
+      // Mongoose warning seen on Render). The .index() call is authoritative.
       default: null,
       validate: {
         validator: (v) => v === null || /^\+[1-9]\d{7,14}$/.test(v),

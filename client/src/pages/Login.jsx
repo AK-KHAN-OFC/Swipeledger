@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -169,6 +170,15 @@ export default function Login() {
             Sign in
           </Button>
         </form>
+
+        {/* Create Account entry point */}
+        <p className="text-center text-sm text-gray-500 mt-4">
+          New to SwipeLedger?{' '}
+          <Link to="/register" className="text-brand-600 hover:text-brand-700 font-medium">
+            Create Account
+          </Link>
+        </p>
+
       </div>
     </div>
   );

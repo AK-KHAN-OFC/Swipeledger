@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { AUDIT_LOG_TTL_DAYS } = require('../config/constants');
 
 const VALID_ACTIONS = [
+  'account_registered',
   'login', 'logout', 'login_failed', 'password_changed', 'token_refreshed',
   'device_registered', 'device_revoked', 'device_limit_reached',
   'customer_created', 'customer_updated', 'customer_archived',

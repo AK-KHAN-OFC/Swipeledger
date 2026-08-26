@@ -83,6 +83,7 @@ jobs:
         env:
           VITE_API_URL: https://swipeledger.onrender.com/api/v1
 
+
       - name: Upload frontend build
         uses: actions/upload-artifact@v4
         with:
@@ -134,6 +135,9 @@ jobs:
         run: npm run build
         working-directory: client
         env:
+          # Absolute Render URL required — inside the Capacitor WebView the
+          # relative /api/v1 resolves against https://localhost (WebView origin),
+          # not the Render backend.
           VITE_API_URL: https://swipeledger.onrender.com/api/v1
 
       # Create the Android project under client/android/ using capacitor.config.json
