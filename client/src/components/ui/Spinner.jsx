@@ -1,7 +1,19 @@
-// Input
-export function Input({
-  label, id, error, className = '', type = 'text', ...props
-}) {
+import { forwardRef } from 'react';
+
+// Input — must use forwardRef so that react-hook-form's register() ref callback
+// reaches the underlying <input> DOM element.
+//
+// Without forwardRef, React 18 intercepts the ref prop on a plain function
+// component and never calls the RHF refCallback. _fields[name]._f.ref stays as
+// the placeholder object { name }, whose .value is always undefined. Every
+// onChange call then writes undefined into _formValues, so the zodResolver
+// receives undefined on submit and throws "Required" even when the user has
+// typed a value. forwardRef makes the ref land on the real <input>, so
+// _f.ref.value returns the actual DOM value and validation passes.
+export const Input = forwardRef(function Input(
+  { label, id, error, className = '', type = 'text', ...props },
+  ref,
+) {
   return (
     <div className="space-y-1">
       {label && (
@@ -12,6 +24,7 @@ export function Input({
       <input
         id={id}
         type={type}
+        ref={ref}
         className={`
           block w-full rounded-lg border px-3 py-2.5 text-sm shadow-sm
           placeholder:text-gray-400 focus:outline-none focus:ring-2
@@ -25,7 +38,7 @@ export function Input({
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
-}
+});
 
 // Alert
 export function Alert({ type = 'info', message, className = '' }) {
