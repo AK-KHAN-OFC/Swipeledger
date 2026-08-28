@@ -93,6 +93,7 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
+export { refreshClient };
 
 /**
  * Extract a consistent error message from an axios error response.

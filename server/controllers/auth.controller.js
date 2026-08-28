@@ -15,22 +15,53 @@ const Settings = require('../models/Settings');
 // ─── Cookie helpers ────────────────────────────────────────────────────────────
 
 /**
- * Build httpOnly refresh token cookie options.
+ * Detect whether the server is running in a production / HTTPS context.
  *
- * In production the Android Capacitor WebView makes cross-origin POST requests
- * from https://localhost → https://swipeledger.onrender.com. SameSite=Lax
- * blocks cookies on cross-origin POST, which breaks token refresh. Production
- * must therefore use SameSite=None (paired with Secure=true). In local
- * development (HTTP, same origin) SameSite=Lax is still correct.
+ * Root cause fix: the original code used ONLY `NODE_ENV === 'production'`.
+ * If NODE_ENV was unset on Render, cookies would get SameSite=Lax instead of
+ * SameSite=None. SameSite=Lax blocks the refresh cookie on cross-origin POST
+ * requests from the Capacitor Android WebView (origin: https://localhost →
+ * https://swipeledger.onrender.com), causing sessions to be lost after the
+ * 60-minute access token expired even though the 30-day refresh token was valid.
+ *
+ * Fix: also check process.env.RENDER which Render sets automatically on every
+ * deployed service, regardless of NODE_ENV. This makes the production cookie
+ * configuration reliable even if NODE_ENV is misconfigured.
+ */
+function isProductionEnv() {
+  return process.env.NODE_ENV === 'production' || !!process.env.RENDER;
+}
+
+/**
+ * Build httpOnly refresh token cookie options.
+ * SameSite=None + Secure is required for cross-origin Capacitor requests.
  */
 function refreshCookieOptions(maxAge) {
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = isProductionEnv();
   return {
     httpOnly: true,
-    secure: isProd,
+    secure:   isProd,
     sameSite: isProd ? 'none' : 'lax',
-    path: '/api/v1/auth',   // Cookie only sent to auth endpoints
-    maxAge,                 // milliseconds
+    path:     '/api/v1/auth',
+    maxAge,                  // Express converts ms → seconds for Set-Cookie
+  };
+}
+
+/**
+ * Options used when clearing the refresh cookie.
+ *
+ * Root cause fix: clearCookie must send matching SameSite and Secure attributes.
+ * In modern Chromium (Android WebView 80+) a Set-Cookie that tries to clear a
+ * SameSite=None; Secure cookie but omits those attributes may be ignored, leaving
+ * the old cookie alive after logout.
+ */
+function clearCookieOptions() {
+  const isProd = isProductionEnv();
+  return {
+    path:     '/api/v1/auth',
+    httpOnly: true,
+    secure:   isProd,
+    sameSite: isProd ? 'none' : 'lax',
   };
 }
 
@@ -209,7 +240,7 @@ async function logout(req, res) {
     requestId: req.id,
   });
 
-  res.clearCookie('swipeledger_refresh', { path: '/api/v1/auth' });
+  res.clearCookie('swipeledger_refresh', clearCookieOptions());
   return res.json({ success: true, data: { message: 'Logged out successfully.' } });
 }
 
@@ -227,8 +258,9 @@ async function refresh(req, res) {
 
     return res.json({ success: true, data: { accessToken } });
   } catch (err) {
-    // Clear the cookie on any refresh failure
-    res.clearCookie('swipeledger_refresh', { path: '/api/v1/auth' });
+    // Clear the cookie on any refresh failure — use matching attributes so the
+    // cookie is reliably removed by the Android WebView's Chromium cookie engine.
+    res.clearCookie('swipeledger_refresh', clearCookieOptions());
     return res.status(401).json({
       success: false,
       error: {

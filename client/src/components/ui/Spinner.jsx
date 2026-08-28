@@ -56,16 +56,44 @@ export function Alert({ type = 'info', message, className = '' }) {
 }
 
 // Spinner
+/**
+ * Thin-ring arc spinner — replaces the previous filled-wedge design.
+ *
+ * Anatomy (SVG viewBox 0 0 24 24):
+ *   Circle r=9.5, circumference ≈ 59.69
+ *   Track ring: full circle at 15% opacity
+ *   Active arc:  75% of circumference (≈ 44.77) with rounded ends
+ *   Rotated -90° so the arc starts at 12 o'clock.
+ *
+ * Props and className interface unchanged — existing consumers need no edits.
+ */
 export function Spinner({ size = 'md', className = '' }) {
-  const sizes = { sm: 'h-4 w-4', md: 'h-8 w-8', lg: 'h-12 w-12' };
+  const sizes = { sm: 'h-5 w-5', md: 'h-7 w-7', lg: 'h-11 w-11' };
   return (
     <svg
       className={`animate-spin text-brand-600 ${sizes[size]} ${className}`}
-      fill="none"
       viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="status"
+      aria-label="Loading"
     >
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+      {/* Faint track — full ring at low opacity */}
+      <circle
+        cx="12" cy="12" r="9.5"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        className="opacity-[0.15]"
+      />
+      {/* Active arc — 75 % visible, starts at 12 o'clock, rounded caps */}
+      <circle
+        cx="12" cy="12" r="9.5"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeDasharray="44.77 14.92"
+        transform="rotate(-90 12 12)"
+      />
     </svg>
   );
 }
