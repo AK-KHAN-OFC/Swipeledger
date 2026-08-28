@@ -1,5 +1,5 @@
-// Stub page used for all Phase 2+ routes.
-// Replace with real implementation in future phases.
+// Stub pages for routes not yet implemented (Phase 3+).
+// Customers, Transactions, and CustomerDetail are now real pages — removed from stubs.
 function StubPage({ title, phase }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -11,13 +11,10 @@ function StubPage({ title, phase }) {
 }
 
 export function Dashboard()       { return <StubPage title="Dashboard"        phase="Phase 3" />; }
-export function Customers()       { return <StubPage title="Customers"        phase="Phase 2" />; }
-export function Transactions()    { return <StubPage title="Transactions"     phase="Phase 2" />; }
-export function TransactionNew()  { return <StubPage title="New Transaction"  phase="Phase 2" />; }
 export function Reports()         { return <StubPage title="Reports"          phase="Phase 3" />; }
-export function PaymentAccounts() { return <StubPage title="Payment Accounts" phase="Phase 2" />; }
+export function PaymentAccounts() { return <StubPage title="Payment Accounts" phase="Phase 3" />; }
 export function AuditLog()        { return <StubPage title="Audit Log"        phase="Phase 4" />; }
-export function NotFound()        {
+export function NotFound() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
       <div className="text-6xl mb-4">404</div>

@@ -17,6 +17,8 @@ const accountRoutes = require('./routes/account.routes');
 const deviceRoutes = require('./routes/device.routes');
 const settingsRoutes = require('./routes/settings.routes');
 const auditRoutes = require('./routes/audit.routes');
+const customerRoutes = require('./routes/customer.routes');
+const transactionRoutes = require('./routes/transaction.routes');
 
 const app = express();
 
@@ -110,6 +112,8 @@ app.use('/api/v1/account', accountRoutes);
 app.use('/api/v1/devices', deviceRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/audit', auditRoutes);
+app.use('/api/v1/customers', customerRoutes);
+app.use('/api/v1/transactions', transactionRoutes);
 
 // ─── 404 handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
