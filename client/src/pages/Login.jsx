@@ -36,15 +36,26 @@ export default function Login() {
     try {
       await login(data);
     } catch (err) {
-      const code = getApiErrorCode(err);
-      const msg  = getApiError(err);
+      const code       = getApiErrorCode(err);
+      const httpStatus = err?.response?.status;
 
       if (code === 'RATE_LIMITED') {
-        setRateLimitMsg(msg);
+        setRateLimitMsg(getApiError(err));
+
       } else if (code === 'DEVICE_LIMIT_REACHED') {
         setDeviceLimitData(err.response?.data?.data || { limit: 3, activeDevices: [] });
+
+      } else if (!err?.response) {
+        // No response at all — device is offline, Airplane Mode, DNS failure,
+        // or the server timed out. This is NOT an auth failure.
+        setServerError('No internet connection. Please check your network and try again.');
+
+      } else if (httpStatus >= 500) {
+        // Server-side error — backend is temporarily unavailable.
+        setServerError('Server temporarily unavailable. Please try again in a moment.');
+
       } else {
-        // INVALID_CREDENTIALS or anything else — same generic message
+        // HTTP 4xx (401 wrong credentials, 400 validation, etc.)
         setServerError('Invalid credentials. Please check your account code, username, and password.');
       }
     }

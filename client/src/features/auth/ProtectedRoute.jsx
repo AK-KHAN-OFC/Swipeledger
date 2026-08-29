@@ -1,72 +1,120 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import useAuthStore from '../../store/authStore';
+import useAuthStore, {
+  readStoredAccessToken,
+  removeStoredAccessToken,
+} from '../../store/authStore';
 import { refreshClient } from '../../services/api/client';
 import { getDeviceUUID } from '../../utils/deviceUuid';
 import Spinner from '../../components/ui/Spinner';
 import { Button } from '../../components/ui/Button';
 
 /**
- * Guards authenticated routes.
+ * Guards all authenticated routes.
  *
- * STATUS MACHINE
- * ─────────────
- * 'checking'       — initial state; silent refresh in progress
- * 'authenticated'  — refresh succeeded (or token already in memory)
- * 'unauthenticated'— server returned 401/403; send user to /login
- * 'network_error'  — network or 5xx error; show retry UI instead of
- *                    forcing re-login (Render cold-start, brief outage)
+ * ── STATUS MACHINE ────────────────────────────────────────────────────────────
+ *   'checking'        — bootstrap in progress
+ *   'authenticated'   — session confirmed
+ *   'unauthenticated' — genuine 401/403 from server → send to /login
+ *   'network_error'   — no response (offline, Render cold-start) → retry UI
  *
- * ROOT CAUSE FIXES
- * ────────────────
- * 1. refreshClient is used directly (no 401 interceptor).
- *    The previous code called authApi.refresh() which routes through
- *    apiClient. When that refresh failed with 401, the 401 interceptor
- *    kicked in and attempted a second refresh via refreshClient — both
- *    failed, clearAuth() was called, and the user was logged out even
- *    if the failure was temporary. Using refreshClient here bypasses
- *    the interceptor entirely.
+ * ── TWO-PHASE SESSION RESTORATION ────────────────────────────────────────────
  *
- * 2. Network errors are distinguished from auth failures.
- *    Previously any exception (network timeout, Render cold-start, 5xx)
- *    fell through the single .catch() and was treated as "not logged in",
- *    redirecting to /login unnecessarily. Now only genuine 401/403 responses
- *    cause re-login; network errors show a retry button instead.
+ * PHASE 1 — localStorage access token
+ *   localStorage is reliably flushed to SQLite on every write in Android
+ *   WebView, so it survives process kills. Read the stored access token and
+ *   verify it against /account. If the server accepts it → authenticated
+ *   immediately, no extra round-trip needed.
  *
- * 3. The /account fetch after refresh also uses refreshClient (no interceptors)
- *    with the just-issued access token passed as an explicit header, preventing
- *    any interceptor involvement during the bootstrap sequence.
+ *   On any HTTP error from /account: clear the stale token and fall through
+ *   to Phase 2 (cookie refresh). On a network error: show the retry UI —
+ *   do NOT redirect to /login, the session may still be valid.
+ *
+ * PHASE 2 — httpOnly cookie refresh
+ *   Attempt a cookie-based refresh. If the cookie persisted in the Android
+ *   WebView's CookieManager (which is not guaranteed for third-party cookies
+ *   across process kills), this succeeds and the new access token is stored
+ *   back to localStorage for the NEXT cold start.
+ *
+ *   401/403 → unauthenticated (session truly expired or cookie absent).
+ *   Network error → retry UI.
+ *
+ * ── WHY refreshClient (NOT apiClient) ────────────────────────────────────────
+ *   apiClient has the 401 interceptor. If the refresh itself returns 401, the
+ *   interceptor fires a second refresh attempt, then calls clearAuth() and
+ *   window.location.href='/login'. Using refreshClient bypasses the interceptor
+ *   entirely — a 401 here is caught by our own catch block and handled cleanly.
  */
 export default function ProtectedRoute({ children }) {
   const { isAuthenticated, setAuth } = useAuthStore();
   const location = useLocation();
 
-  // Start 'checking' if not yet authenticated; skip the refresh if we already have a token.
-  const [status, setStatus] = useState(isAuthenticated ? 'authenticated' : 'checking');
+  const [status, setStatus] = useState(
+    isAuthenticated ? 'authenticated' : 'checking',
+  );
 
   const doRefresh = useCallback(async () => {
     setStatus('checking');
-    try {
-      const deviceId = getDeviceUUID();
+    const deviceId = getDeviceUUID();
 
-      // ── Step 1: exchange the httpOnly refresh cookie for a new access token ──
-      // Uses refreshClient (no interceptors) so a 401 here does NOT trigger
-      // another refresh attempt. A 401 here means the session is truly expired.
+    // ── Phase 1: stored access token (localStorage, reliable across kills) ──
+
+    const storedToken = readStoredAccessToken();
+
+    if (storedToken) {
+      try {
+        const accRes = await refreshClient.get('/account', {
+          headers: {
+            Authorization: `Bearer ${storedToken}`,
+            'X-Device-ID': deviceId,
+          },
+        });
+        const account = accRes.data.data;
+
+        setAuth({
+          accessToken: storedToken,
+          account: {
+            accountId:    account.accountId,
+            accountCode:  account.accountCode,
+            username:     account.username,
+            businessName: account.businessName,
+            deviceLimit:  account.deviceLimit,
+          },
+        });
+        setStatus('authenticated');
+        return; // ← done; no cookie refresh needed
+      } catch (ph1Err) {
+        // Always clear the rejected stored token regardless of error type
+        removeStoredAccessToken();
+
+        if (!ph1Err?.response) {
+          // Server unreachable — show retry, do NOT force re-login
+          setStatus('network_error');
+          return;
+        }
+        // HTTP error (almost always 401 — token expired since last cold start)
+        // Fall through to Phase 2.
+      }
+    }
+
+    // ── Phase 2: httpOnly cookie refresh (may or may not have persisted) ────
+
+    try {
       const refreshRes = await refreshClient.post('/auth/refresh', null, {
         headers: { 'X-Device-ID': deviceId },
       });
       const { accessToken } = refreshRes.data.data;
 
-      // ── Step 2: fetch account data with the new token ─────────────────────
-      // Also via refreshClient to stay outside the interceptor chain.
+      // /account call with the freshly issued token
       const accRes = await refreshClient.get('/account', {
         headers: {
-          Authorization:  `Bearer ${accessToken}`,
-          'X-Device-ID':  deviceId,
+          Authorization: `Bearer ${accessToken}`,
+          'X-Device-ID': deviceId,
         },
       });
       const account = accRes.data.data;
 
+      // setAuth persists the new token to localStorage for the next cold start
       setAuth({
         accessToken,
         account: {
@@ -77,18 +125,14 @@ export default function ProtectedRoute({ children }) {
           deviceLimit:  account.deviceLimit,
         },
       });
-
       setStatus('authenticated');
-    } catch (err) {
-      const httpStatus = err?.response?.status;
-
+    } catch (ph2Err) {
+      const httpStatus = ph2Err?.response?.status;
       if (httpStatus === 401 || httpStatus === 403) {
-        // Session genuinely invalid or expired → require login
+        // Refresh cookie absent or session expired → user must log in
         setStatus('unauthenticated');
       } else {
-        // No response (network error, timeout) or 5xx → connectivity issue.
-        // Do NOT redirect to login — the session may still be valid.
-        // Show a retry UI so the user can try again without losing their session.
+        // Network or 5xx → offline or Render cold-start → retry
         setStatus('network_error');
       }
     }
@@ -128,8 +172,6 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  // Covers both explicit 'unauthenticated' and the edge case where isAuthenticated
-  // is still false after status transitions (e.g. store update races).
   if (!isAuthenticated || status === 'unauthenticated') {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
