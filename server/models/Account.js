@@ -123,10 +123,23 @@ AccountSchema.index({ accountCode: 1 }, { unique: true });
 // Do NOT add a separate global { username: 1 } unique index.
 AccountSchema.index({ accountCode: 1, username: 1 }, { unique: true });
 
-// Sparse unique index on mobileNumber.
-// unique: true prevents two accounts registering with the same phone number (F-2 fix).
-// sparse: true excludes null values — multiple accounts with no phone remain allowed.
-AccountSchema.index({ mobileNumber: 1 }, { unique: true, sparse: true });
+// Unique index on mobileNumber — enforces no two accounts share a phone number.
+//
+// WHY partialFilterExpression instead of { unique: true, sparse: true }:
+//   sparse:true excludes documents where the field is *absent*, but it INCLUDES
+//   documents where mobileNumber is explicitly null. The Account model sets
+//   default: null, so every account with no phone has { mobileNumber: null }
+//   stored. Under a sparse unique index, all those accounts compete for the same
+//   null key → E11000 "dup key: { mobileNumber: null }" on the second account.
+//
+//   partialFilterExpression: { mobileNumber: { $type: 'string' } } only indexes
+//   documents where mobileNumber is an actual string. null and absent fields are
+//   excluded entirely — multiple no-phone accounts are allowed, uniqueness is
+//   still enforced among accounts that do supply a number. (F-2 fix)
+AccountSchema.index(
+  { mobileNumber: 1 },
+  { unique: true, partialFilterExpression: { mobileNumber: { $type: 'string' } } },
+);
 
 const Account = mongoose.model('Account', AccountSchema);
 module.exports = Account;
