@@ -10,8 +10,14 @@ export function useAuth() {
     useAuthStore();
 
   const login = useCallback(
-    async ({ accountCode: code, username: user, password, deviceName }) => {
-      const res = await authApi.login({ accountCode: code, username: user, password, deviceName });
+    async ({ accountCode: code, username: user, password, deviceName, revokeDeviceId }) => {
+      const res = await authApi.login({
+        accountCode: code,
+        username:    user,
+        password,
+        deviceName,
+        revokeDeviceId,   // undefined when not provided; omitted by JSON.stringify
+      });
       const { accessToken, account } = res.data.data;
       setAuth({ accessToken, account });
       navigate('/');

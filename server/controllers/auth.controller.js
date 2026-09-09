@@ -105,7 +105,7 @@ function deriveUsername(businessName) {
  * POST /api/v1/auth/login
  */
 async function login(req, res) {
-  const { accountCode, username, password, deviceName } = req.body;
+  const { accountCode, username, password, deviceName, revokeDeviceId } = req.body;
   const deviceUUID = req.deviceUUID;
   const ipAddress = req.ip;
   const userAgent = req.headers['user-agent'];
@@ -115,6 +115,7 @@ async function login(req, res) {
       await authService.loginUser({
         accountCode, username, password,
         deviceUUID, deviceName, userAgent, ipAddress,
+        revokeDeviceId, // optional — provided when device-limit was previously reached
       });
 
     // Reset rate limit counters on successful login
@@ -134,6 +135,7 @@ async function login(req, res) {
         deviceName: device.name,
         platform: device.platform,
         isNewDevice,
+        ...(revokeDeviceId && { revokedDeviceId: revokeDeviceId }),
       },
       ipAddress,
       requestId: req.id,
@@ -387,8 +389,27 @@ async function register(req, res) {
       });
       break; // created successfully
     } catch (err) {
-      // 11000 = MongoDB duplicate key — only retry on accountCode collision
-      if (err.code === 11000 && attempt < 3) continue;
+      if (err.code === 11000) {
+        // Distinguish which unique index caused the violation.
+        // err.keyPattern is a MongoDB driver field: { fieldName: 1 }.
+        const key = err.keyPattern ? Object.keys(err.keyPattern)[0] : '';
+
+        if (key === 'mobileNumber') {
+          // User-supplied duplicate mobile number — not retriable, return 409.
+          return res.status(409).json({
+            success: false,
+            error: {
+              code:      'DUPLICATE_MOBILE_NUMBER',
+              message:   'An account with this mobile number already exists. ' +
+                         'Please use a different number or leave it blank.',
+              requestId: req.id,
+            },
+          });
+        }
+
+        // accountCode collision (key === 'accountCode') — extremely rare, retry.
+        if (attempt < 3) continue;
+      }
       throw err;
     }
   }

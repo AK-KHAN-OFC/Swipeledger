@@ -38,9 +38,12 @@ function refreshExpiryMs() {
  * @param {string} [opts.deviceName]
  * @param {string} [opts.userAgent]
  * @param {string} [opts.ipAddress]
+ * @param {string} [opts.revokeDeviceId] Optional MongoDB ObjectId of a device to revoke
+ *   before registering the new one. Used by the login-screen device-limit flow.
+ *   Ownership is validated — IDs belonging to other accounts are silently ignored.
  * @returns {{ accessToken, rawRefreshToken, account, session, device, isNewDevice }}
  */
-async function loginUser({ accountCode, username, password, deviceUUID, deviceName, userAgent, ipAddress }) {
+async function loginUser({ accountCode, username, password, deviceUUID, deviceName, userAgent, ipAddress, revokeDeviceId }) {
   // ── 1. Single compound lookup (uses { accountCode, username } index) ─────────
   const account = await Account.findOne({
     accountCode,
@@ -56,6 +59,38 @@ async function loginUser({ accountCode, username, password, deviceUUID, deviceNa
   if (!account || !passwordValid) {
     // Caller is responsible for recording the rate-limit failure
     throw createError(401, 'INVALID_CREDENTIALS', 'Invalid credentials.');
+  }
+
+  // ── 2.5. Pre-revoke a device (device-limit reached flow) ─────────────────────
+  // Credentials are verified above. If the client requested a specific device to be
+  // revoked (because the limit was previously hit), do so BEFORE registerOrFindDevice
+  // so the freed slot is immediately available.
+  //
+  // Security rules:
+  //   - Only revoke devices owned by THIS account (accountId filter).
+  //   - Only revoke active devices (isActive: true).
+  //   - Silently ignore if not found / belongs to another account — revealing
+  //     "device not found" vs "wrong account" would leak cross-account information.
+  if (revokeDeviceId) {
+    const toRevoke = await Device.findOne({
+      _id:       revokeDeviceId,
+      accountId: account._id,   // ← ownership enforced
+      isActive:  true,
+    });
+
+    if (toRevoke) {
+      await Session.updateMany(
+        { accountId: account._id, deviceId: toRevoke._id },
+        { $set: { isRevoked: true } },
+      );
+      await Device.findByIdAndUpdate(toRevoke._id, {
+        $set: { isActive: false, revokedAt: new Date() },
+      });
+      logger.info('Device revoked during login flow', {
+        accountId:       account._id.toString(),
+        revokedDeviceId: toRevoke._id.toString(),
+      });
+    }
   }
 
   // ── 3. Atomic device check + registration ────────────────────────────────────

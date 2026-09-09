@@ -123,8 +123,10 @@ AccountSchema.index({ accountCode: 1 }, { unique: true });
 // Do NOT add a separate global { username: 1 } unique index.
 AccountSchema.index({ accountCode: 1, username: 1 }, { unique: true });
 
-// Sparse index on mobileNumber (not all accounts have one)
-AccountSchema.index({ mobileNumber: 1 }, { sparse: true });
+// Sparse unique index on mobileNumber.
+// unique: true prevents two accounts registering with the same phone number (F-2 fix).
+// sparse: true excludes null values — multiple accounts with no phone remain allowed.
+AccountSchema.index({ mobileNumber: 1 }, { unique: true, sparse: true });
 
 const Account = mongoose.model('Account', AccountSchema);
 module.exports = Account;

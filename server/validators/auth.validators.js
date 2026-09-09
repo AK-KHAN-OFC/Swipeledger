@@ -19,6 +19,16 @@ const loginSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .max(128, 'Password must be at most 128 characters'),
   deviceName: z.string().trim().max(100).optional(),
+  // Optional: ID of a device to revoke before registering this one.
+  // Used by Login.jsx when the device limit has been reached.
+  // Must be a valid MongoDB ObjectId (24-char hex). Ownership is verified
+  // server-side against the authenticated account — arbitrary IDs from other
+  // accounts are silently ignored.
+  revokeDeviceId: z
+    .string()
+    .trim()
+    .regex(/^[a-f\d]{24}$/i, 'Invalid device ID')
+    .optional(),
 });
 
 const changePasswordSchema = z.object({

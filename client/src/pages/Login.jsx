@@ -5,9 +5,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '../hooks/useAuth';
 import { getApiError, getApiErrorCode } from '../services/api/client';
-import { devicesApi } from '../services/api/devices.api';
 import { Input, Alert } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
+// devicesApi import removed — revoke now goes through the login flow (see handleRevoke)
 
 const loginSchema = z.object({
   accountCode: z
@@ -63,14 +63,30 @@ export default function Login() {
 
   async function handleRevoke(deviceId) {
     setRevoking(deviceId);
+    setServerError('');
+    // Re-submit login credentials + the device ID to revoke.
+    // The server verifies credentials, revokes the device (ownership checked),
+    // then registers this device and returns an access token — all in one call.
+    // This avoids calling the authenticated DELETE /devices/:id endpoint from a
+    // pre-login context where no access token is available (the previous bug).
+    const { accountCode, username, password } = getValues();
     try {
-      await devicesApi.revoke(deviceId);
-      setDeviceLimitData((prev) => ({
-        ...prev,
-        activeDevices: prev.activeDevices.filter((d) => d._id !== deviceId),
-      }));
-    } catch {
-      setServerError('Failed to revoke device. Please try again.');
+      await login({ accountCode, username, password, revokeDeviceId: deviceId });
+      // login() calls navigate('/') on success — user lands on dashboard
+    } catch (err) {
+      const code       = getApiErrorCode(err);
+      const httpStatus = err?.response?.status;
+      if (code === 'DEVICE_LIMIT_REACHED') {
+        // Another concurrent device was registered between revoke and our login —
+        // refresh the device list so the user can revoke again.
+        setDeviceLimitData(err.response?.data?.data || { limit: 3, activeDevices: [] });
+      } else if (!err?.response) {
+        setServerError('No internet connection. Please check your network and try again.');
+      } else if (httpStatus >= 500) {
+        setServerError('Server temporarily unavailable. Please try again in a moment.');
+      } else {
+        setServerError('Failed to revoke device. Please try again.');
+      }
     } finally {
       setRevoking(null);
     }
