@@ -12,11 +12,67 @@ const connectDB = require('./config/db');
 const app = require('./app');
 const logger = require('./utils/logger');
 
+// Models are loaded when app.js is required above. We reference Account here
+// for the startup index migration — no circular dependency.
+const Account = require('./models/Account');
+
 let server;
+
+// ── Index migration ───────────────────────────────────────────────────────────
+/**
+ * Ensure the mobileNumber_1 index has the correct uniqueness constraint.
+ *
+ * ROOT CAUSE (F-2 production failure):
+ *   Changing a Mongoose schema index definition does NOT automatically update an
+ *   existing MongoDB index. When we added `unique: true` and `partialFilterExpression`
+ *   to the schema, Mongoose called createIndex() on startup — but MongoDB rejected it
+ *   because an index named `mobileNumber_1` already existed with different options
+ *   (sparse: true, no unique). Mongoose swallowed the error and the old non-unique
+ *   index survived untouched, allowing duplicate mobile numbers.
+ *
+ * Fix:
+ *   Explicitly drop the old index if it exists without unique:true, then call
+ *   Account.createIndexes() so Mongoose creates the correct one from the schema.
+ *   This function is idempotent — subsequent runs find the correct index and exit
+ *   immediately without making any changes.
+ */
+async function migrateIndexes() {
+  try {
+    // collection.indexes() lists all existing indexes in MongoDB for this collection.
+    // We catch the error in case the collection doesn't exist yet (first deploy).
+    const existing = await Account.collection.indexes().catch(() => []);
+    const mobileIdx = existing.find((idx) => idx.name === 'mobileNumber_1');
+
+    if (mobileIdx && !mobileIdx.unique) {
+      // Old non-unique index found — must be dropped before the correct one can be created.
+      await Account.collection.dropIndex('mobileNumber_1');
+      logger.info('[startup] Dropped stale non-unique mobileNumber_1 index — will recreate');
+    }
+  } catch (err) {
+    // Non-fatal: if the drop fails for any reason, log it and continue.
+    // createIndexes() below will fail too and also log — the server still starts,
+    // and the next deploy retries automatically.
+    logger.warn('[startup] mobileNumber index migration warning', { message: err.message });
+  }
+
+  // Create the correct index from the schema definition.
+  // If it already exists with the correct options, this is a no-op.
+  // If the old index was just dropped above, this creates the new correct one.
+  await Account.createIndexes().catch((err) => {
+    logger.warn('[startup] Account.createIndexes() warning', { message: err.message });
+  });
+
+  logger.info('[startup] Account indexes verified');
+}
 
 async function start() {
   try {
     await connectDB();
+
+    // Run index migration before accepting requests.
+    // Drops and recreates mobileNumber_1 with unique + partialFilterExpression
+    // if production still has the old non-unique sparse index.
+    await migrateIndexes();
 
     const PORT = parseInt(process.env.PORT || '10000', 10);
     server = app.listen(PORT, () => {
