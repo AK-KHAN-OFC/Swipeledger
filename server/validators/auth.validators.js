@@ -55,14 +55,13 @@ const registerSchema = z.object({
     .min(2, 'Business name must be at least 2 characters')
     .max(100, 'Business name must be at most 100 characters'),
 
-  // Optional — must be E.164 if provided (matches Account model validator)
+  // mobileNumber is now REQUIRED. It must be a valid E.164 string.
+  // Uniqueness is enforced at the database level (unique index + partialFilterExpression).
   mobileNumber: z
-    .string()
+    .string({ required_error: 'Mobile number is required' })
     .trim()
-    .regex(/^\+[1-9]\d{7,14}$/, 'Mobile number must be in E.164 format (e.g. +919876543210)')
-    .optional()
-    .or(z.literal(''))
-    .transform((v) => (v === '' ? null : v ?? null)),
+    .min(1, 'Mobile number is required')
+    .regex(/^\+[1-9]\d{7,14}$/, 'Mobile number must be in E.164 format (e.g. +919876543210)'),
 });
 
 module.exports = { loginSchema, changePasswordSchema, registerSchema };

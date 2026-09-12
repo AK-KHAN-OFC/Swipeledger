@@ -259,37 +259,75 @@ describe('F-2: duplicate mobile number registration', () => {
   });
 
   /**
-   * Registration without a mobile number must still succeed.
-   * null is excluded from the sparse unique index.
+   * Missing mobileNumber → 400 VALIDATION_ERROR.
+   * mobileNumber is now required for registration.
    */
-  test('registration without mobile number is allowed', async () => {
+  test('missing mobile number returns 400', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
       .send({ businessName: 'No-Phone Shop' });
-    expect(res.status).toBe(201);
-    expect(res.body.data.accountCode).toBeTruthy();
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
   /**
-   * Multiple accounts without mobile numbers must all be allowed.
+   * Malformed mobile number (wrong format) → 400.
    */
-  test('multiple accounts with no mobile number are all allowed', async () => {
-    const r1 = await request(app).post('/api/v1/auth/register').send({ businessName: 'Shop A' });
-    const r2 = await request(app).post('/api/v1/auth/register').send({ businessName: 'Shop B' });
-    const r3 = await request(app).post('/api/v1/auth/register').send({ businessName: 'Shop C' });
+  test('malformed mobile number returns 400', async () => {
+    const bad = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ businessName: 'Shop X', mobileNumber: '9876543210' }); // missing +country code
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  /**
+   * Same mobile + same business name → 409.
+   */
+  test('same mobile + same business name → rejected 409', async () => {
+    const payload = { businessName: 'Ravi Store', mobileNumber: '+919900000001' };
+    const r1 = await request(app).post('/api/v1/auth/register').send(payload);
+    expect(r1.status).toBe(201);
+    const r2 = await request(app).post('/api/v1/auth/register').send(payload);
+    expect(r2.status).toBe(409);
+    expect(r2.body.error.code).toBe('DUPLICATE_MOBILE_NUMBER');
+  });
+
+  /**
+   * Same mobile + DIFFERENT business name → still 409.
+   * Business name is NOT unique — mobile is the unique key.
+   */
+  test('same mobile + different business name → rejected 409', async () => {
+    const r1 = await request(app).post('/api/v1/auth/register')
+      .send({ businessName: 'Shop Alpha', mobileNumber: '+919900000002' });
+    expect(r1.status).toBe(201);
+    const r2 = await request(app).post('/api/v1/auth/register')
+      .send({ businessName: 'Shop Beta', mobileNumber: '+919900000002' }); // same mobile
+    expect(r2.status).toBe(409);
+    expect(r2.body.error.code).toBe('DUPLICATE_MOBILE_NUMBER');
+  });
+
+  /**
+   * Different mobile + SAME business name → both succeed.
+   * Business name is not unique.
+   */
+  test('different mobile + same business name → both allowed', async () => {
+    const r1 = await request(app).post('/api/v1/auth/register')
+      .send({ businessName: 'Kirana Store', mobileNumber: '+919900000003' });
+    const r2 = await request(app).post('/api/v1/auth/register')
+      .send({ businessName: 'Kirana Store', mobileNumber: '+919900000004' }); // same name, different mobile
     expect(r1.status).toBe(201);
     expect(r2.status).toBe(201);
-    expect(r3.status).toBe(201);
   });
 
   /**
-   * Two different mobile numbers can be registered independently.
+   * Different mobile + different business name → both succeed.
    */
-  test('two accounts with different mobile numbers both succeed', async () => {
+  test('different mobile + different business name → both allowed', async () => {
     const r1 = await request(app).post('/api/v1/auth/register')
-      .send({ businessName: 'Shop Alpha', mobileNumber: '+919000000001' });
+      .send({ businessName: 'Shop One', mobileNumber: '+919900000005' });
     const r2 = await request(app).post('/api/v1/auth/register')
-      .send({ businessName: 'Shop Beta',  mobileNumber: '+919000000002' });
+      .send({ businessName: 'Shop Two', mobileNumber: '+919900000006' });
     expect(r1.status).toBe(201);
     expect(r2.status).toBe(201);
   });

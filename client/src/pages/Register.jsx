@@ -17,14 +17,13 @@ const registerSchema = z.object({
     .min(2, 'At least 2 characters')
     .max(100, 'At most 100 characters'),
   mobileNumber: z
-    .string()
+    .string({ required_error: 'Mobile number is required' })
     .trim()
+    .min(1, 'Mobile number is required')
     .regex(
       /^\+[1-9]\d{7,14}$/,
       'Include country code, e.g. +919876543210',
-    )
-    .optional()
-    .or(z.literal('')),
+    ),
 });
 
 // ─── Copy-to-clipboard helper ────────────────────────────────────────────────
@@ -71,7 +70,7 @@ export default function Register() {
     try {
       const res = await authApi.register({
         businessName: data.businessName,
-        mobileNumber: data.mobileNumber || undefined,
+        mobileNumber: data.mobileNumber,
       });
       setCredentials(res.data.data);
     } catch (err) {
@@ -198,7 +197,7 @@ export default function Register() {
 
           <Input
             id="mobileNumber"
-            label="Mobile Number (optional)"
+            label="Mobile Number *"
             placeholder="+919876543210"
             error={errors.mobileNumber?.message}
             autoComplete="tel"

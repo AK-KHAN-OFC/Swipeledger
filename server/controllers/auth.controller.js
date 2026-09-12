@@ -381,7 +381,7 @@ async function register(req, res) {
         username,
         passwordHash,
         businessName,
-        mobileNumber: mobileNumber || null,
+        mobileNumber,           // always a valid E.164 string — required by registerSchema
         planId: plan._id,
         deviceLimit: plan.deviceLimit,
         isActive: true,
@@ -439,7 +439,7 @@ async function register(req, res) {
     entityId: account._id,
     metadata: {
       businessName: account.businessName,
-      hasPhone: !!mobileNumber,
+      hasPhone: true,          // mobileNumber required since registration v2
     },
     ipAddress: req.ip,
     requestId: req.id,
